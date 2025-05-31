@@ -41,17 +41,13 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
             z *= 8;
         }
 
-        double maxCoordinate = Math.max(Math.abs(x), Math.abs(z));
-
         if (environment == World.Environment.NORMAL || environment == World.Environment.NETHER) {
-            if (maxCoordinate >= 10000) {
-                maxHealth = 24.0; // ハート12個
-            } else if (maxCoordinate >= 5000) {
-                maxHealth = 22.0; // ハート11個
-            }
+            double sum = Math.abs(x) + Math.abs(z);
+            int increase = (int) Math.floor(sum / 5000.0);
+            maxHealth += 2 * increase;
         }
 
-AttributeInstance healthAttribute = player.getAttribute(Attribute.valueOf("GENERIC_MAX_HEALTH"));
+        AttributeInstance healthAttribute = player.getAttribute(Attribute.GENERIC_MAX_HEALTH);
         if (healthAttribute != null && healthAttribute.getBaseValue() != maxHealth) {
             healthAttribute.setBaseValue(maxHealth);
             if (player.getHealth() > maxHealth) {
