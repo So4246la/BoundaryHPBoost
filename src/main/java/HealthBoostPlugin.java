@@ -47,7 +47,8 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
             maxHealth += 2 * increase;
         }
 
-        AttributeInstance healthAttribute = player.getAttribute(Attribute.GENERIC_MAX_HEALTH);
+        // Updated attribute for newer Paper API versions
+        AttributeInstance healthAttribute = player.getAttribute(Attribute.MAX_HEALTH);
         if (healthAttribute != null && healthAttribute.getBaseValue() != maxHealth) {
             healthAttribute.setBaseValue(maxHealth);
             if (player.getHealth() > maxHealth) {
