@@ -1,0 +1,5 @@
+name: HealthBoostPlugin
+main: com.example.healthboost.HealthBoostPlugin
+version: 1.0
+author: YourName
+api-version: '1.21'
