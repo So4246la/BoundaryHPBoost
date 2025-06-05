@@ -1,5 +1,8 @@
 package com.example.healthboost;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.bukkit.NamespacedKey; // Bukkit APIに含まれるNamespacedKeyをインポート
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
@@ -80,11 +83,24 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
                 getLogger().warning("healthBoostModifierKey is not initialized. Cannot remove modifiers by key for player " + player.getName());
                 return;
             }
-            // Paperサーバーでは modifier.getKey() が NamespacedKey を返すことを期待
-            healthAttribute.getModifiers().stream()
-                .filter(modifier -> this.healthBoostModifierKey.equals(modifier.getKey())) // NamespacedKeyでフィルタリング
-                .findFirst()
-                .ifPresent(healthAttribute::removeModifier);
+
+            // NamespacedKeyに一致する全てのModifierをリストとして収集
+            List<AttributeModifier> modifiersToRemove = healthAttribute.getModifiers().stream()
+                .filter(modifier -> this.healthBoostModifierKey.equals(modifier.getKey()))
+                .collect(Collectors.toList()); // Java 8 の場合は java.util.stream.Collectors.toList()
+
+            if (!modifiersToRemove.isEmpty()) {
+                int removedCount = modifiersToRemove.size();
+                
+                // 収集した全てのModifierを削除
+                modifiersToRemove.forEach(healthAttribute::removeModifier);
+                
+                // 削除されたModifierが2件以上の場合のみ、その件数をログに出力
+                if (removedCount >= 2) {
+                    getLogger().info(String.format("Player: %s - Removed %d stacked/duplicate modifier(s) with key %s.",
+                        player.getName(), removedCount, this.healthBoostModifierKey));
+                }
+            }
         }
     }
 
