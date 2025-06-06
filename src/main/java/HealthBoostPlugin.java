@@ -1,6 +1,8 @@
 package com.example.healthboost;
 
+import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.bukkit.NamespacedKey; // Bukkit APIに含まれるNamespacedKeyをインポート
@@ -46,7 +48,30 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        adjustPlayerHealth(event.getPlayer());
+        Player player = event.getPlayer();
+        AttributeInstance healthAttribute = player.getAttribute(Attribute.MAX_HEALTH);
+
+        if (healthAttribute != null) {
+            removeHealthModifier(player);
+
+            // サーバーのデフォルト最大体力を取得
+            double serverDefaultMaxHealth = healthAttribute.getDefaultValue();
+
+            if (healthAttribute.getBaseValue() > serverDefaultMaxHealth) {
+                // BaseValueがデフォルト最大体力を超える場合は初期化する
+                getLogger().info(String.format(
+                    "Player: %s has a BaseValue of %.2f (server default: %.2f). Resetting to default.",
+                    player.getName(), healthAttribute.getBaseValue(), serverDefaultMaxHealth
+                ));
+                healthAttribute.setBaseValue(serverDefaultMaxHealth);
+
+                // 現在の体力が新しいBaseValueを超える場合は調整
+                if (player.getHealth() > serverDefaultMaxHealth) {
+                    player.setHealth(serverDefaultMaxHealth);
+                }
+            }
+        }
+        adjustPlayerHealth(player);
     }
 
     @EventHandler
@@ -84,22 +109,19 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
                 return;
             }
 
-            // NamespacedKeyに一致する全てのModifierをリストとして収集
-            List<AttributeModifier> modifiersToRemove = healthAttribute.getModifiers().stream()
-                .filter(modifier -> this.healthBoostModifierKey.equals(modifier.getKey()))
-                .collect(Collectors.toList()); // Java 8 の場合は java.util.stream.Collectors.toList()
-
-            if (!modifiersToRemove.isEmpty()) {
-                int removedCount = modifiersToRemove.size();
-                
-                // 収集した全てのModifierを削除
-                modifiersToRemove.forEach(healthAttribute::removeModifier);
-                
-                // 削除されたModifierが2件以上の場合のみ、その件数をログに出力
-                if (removedCount >= 2) {
-                    getLogger().info(String.format("Player: %s - Removed %d stacked/duplicate modifier(s) with key %s.",
-                        player.getName(), removedCount, this.healthBoostModifierKey));
+            int removedCount = 0;
+            Iterator<AttributeModifier> iterator = healthAttribute.getModifiers().iterator();
+            while (iterator.hasNext()) {
+                AttributeModifier modifier = iterator.next();
+                if (this.healthBoostModifierKey.equals(modifier.getKey())) {
+                    iterator.remove();
+                    removedCount++;
                 }
+            }
+
+            if (removedCount >= 2) {
+                getLogger().info(String.format("Player: %s - Removed %d stacked/duplicate modifier(s) with key %s.",
+                        player.getName(), removedCount, this.healthBoostModifierKey));
             }
         }
     }
@@ -111,58 +133,58 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
     private void adjustPlayerHealth(Player player) {
         AttributeInstance healthAttribute = player.getAttribute(Attribute.MAX_HEALTH);
         if (healthAttribute == null) {
-            getLogger().warning("Could not get GENERIC_MAX_HEALTH attribute for player: " + player.getName());
+            getLogger().warning("Could not get MAX_HEALTH attribute for player: " + player.getName());
             return;
         }
 
-        double healthBeforeChanges = player.getHealth();
-        removeHealthModifier(player);
-
-        double healthIncreaseAmount = 0.0;
+        // 現在の座標に基づく増加値を算出する
+        double requiredIncreaseAmount = 0.0;
         World.Environment environment = player.getWorld().getEnvironment();
         double x = player.getLocation().getX();
         double z = player.getLocation().getZ();
 
         if (environment == World.Environment.NETHER) {
-            x *= 8; // ネザー座標をオーバーワールド換算
+            x *= 8;
             z *= 8;
         }
 
         if (environment == World.Environment.NORMAL || environment == World.Environment.NETHER) {
             double sumOfAbsoluteCoordinates = Math.abs(x) + Math.abs(z);
             int increaseSteps = (int) Math.floor(sumOfAbsoluteCoordinates / 5000.0);
-            healthIncreaseAmount = 2.0 * increaseSteps;
+            requiredIncreaseAmount = 2.0 * increaseSteps;
         }
 
-        if (healthIncreaseAmount > 0) {
-            if (this.healthBoostModifierKey == null) {
-                getLogger().warning("healthBoostModifierKey is not initialized. Cannot create modifier for player " + player.getName());
-                return;
-            }
+        // このプラグインによって増加している既存の値取得する
+        Optional<AttributeModifier> existingModifierOpt = healthAttribute.getModifiers().stream()
+            .filter(modifier -> this.healthBoostModifierKey.equals(modifier.getKey()))
+            .findFirst();
+        double currentIncreaseAmount = existingModifierOpt.map(AttributeModifier::getAmount).orElse(0.0);
 
-            // Paper API 1.21.5 のJavadocに基づき、NamespacedKey, amount, operation を取るコンストラクタを使用
+        // 現在座標による値と既存の値が同じであれば何もしない
+        if (currentIncreaseAmount == requiredIncreaseAmount) {
+            return;
+        }
+
+        double healthBeforeChanges = player.getHealth();
+
+        // 既存のModifierを削除
+        existingModifierOpt.ifPresent(healthAttribute::removeModifier);
+
+        // 新しいModifierを追加
+        if (requiredIncreaseAmount > 0) {
             AttributeModifier newModifier = new AttributeModifier(
                 this.healthBoostModifierKey,
-                healthIncreaseAmount,
+                requiredIncreaseAmount,
                 AttributeModifier.Operation.ADD_NUMBER
             );
-
-            try {
-                healthAttribute.addModifier(newModifier);
-            } catch (IllegalArgumentException e) {
-                getLogger().warning("Failed to add health boost modifier for player " + player.getName() + ". Reason: " + e.getMessage());
-            }
+            healthAttribute.addModifier(newModifier);
         }
-
+ 
         double newActualMaxHealth = healthAttribute.getValue();
         double targetHealth = Math.min(healthBeforeChanges, newActualMaxHealth);
 
         if (targetHealth <= 0 && !player.isDead()) {
-            if (newActualMaxHealth > 0) {
-                 targetHealth = Math.min(1.0, newActualMaxHealth);
-            } else {
-                 targetHealth = 1.0;
-            }
+            targetHealth = Math.min(1.0, newActualMaxHealth);
         }
         
         if (player.getHealth() != targetHealth) {
