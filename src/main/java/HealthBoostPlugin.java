@@ -32,7 +32,7 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
 
         // サーバーリロード時などに、オンラインの全プレイヤーにModifierを再適用
         for (Player player : getServer().getOnlinePlayers()) {
-            adjustPlayerHealth(player);
+            player.getScheduler().run(this, scheduledTask -> adjustPlayerHealth(player));
         }
         getLogger().info("HealthBoostPlugin enabled. Modifier Key for lookup: " + this.healthBoostModifierKey.toString());
     }
@@ -41,7 +41,7 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
     public void onDisable() {
         // プラグイン無効時に、このプラグインが追加したModifierを全プレイヤーから削除
         for (Player player : getServer().getOnlinePlayers()) {
-            removeHealthModifier(player);
+            player.getScheduler().run(this, scheduledTask -> removeHealthModifier(player));
         }
         getLogger().info("HealthBoostPlugin disabled and all custom health modifiers removed.");
     }
