@@ -20,9 +20,22 @@ import org.bukkit.plugin.java.JavaPlugin;
 public class HealthBoostPlugin extends JavaPlugin implements Listener {
     // Modifierを確実に識別するためのNamespacedKey (onEnableで初期化)
     private NamespacedKey healthBoostModifierKey;
+    // Folia環境であるかを判定するフラグ
+    private boolean isFolia;
 
     @Override
     public void onEnable() {
+        // Folia判定処理
+        try {
+            // Folia環境にのみ存在するクラスをロード試行
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            this.isFolia = true;
+            getLogger().info("Folia environment detected. Using Folia-specific schedulers.");
+        } catch (ClassNotFoundException e) {
+            this.isFolia = false;
+            getLogger().info("Standard Paper/Spigot environment detected.");
+        }
+
         // NamespacedKeyを初期化 (第一引数はプラグインインスタンス, 第二引数はユニークなキー文字列)
         this.healthBoostModifierKey = new NamespacedKey(this, "boundary_hp_boost_modifier");
 
@@ -30,7 +43,15 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
 
         // サーバーリロード時などに、オンラインの全プレイヤーにModifierを再適用
         for (Player player : getServer().getOnlinePlayers()) {
-            adjustPlayerHealth(player);
+            if (isFolia) {
+                // 【Foliaの場合】プレイヤーのスケジューラを使用
+                player.getScheduler().run(this, scheduledTask -> {
+                    adjustPlayerHealth(player);
+                }, null);
+            } else {
+                // 【PaperMCの場合】直接メソッドを呼び出す（onEnableはメインスレッドで実行されるため安全）
+                adjustPlayerHealth(player);
+            }
         }
         getLogger().info("HealthBoostPlugin enabled. Modifier Key for lookup: " + this.healthBoostModifierKey.toString());
     }
@@ -39,7 +60,15 @@ public class HealthBoostPlugin extends JavaPlugin implements Listener {
     public void onDisable() {
         // プラグイン無効時に、このプラグインが追加したModifierを全プレイヤーから削除
         for (Player player : getServer().getOnlinePlayers()) {
-            removeHealthModifier(player);
+            if (isFolia) {
+                // 【Foliaの場合】プレイヤーのスケジューラを使用
+                player.getScheduler().run(this, scheduledTask -> {
+                    removeHealthModifier(player);
+                }, null);
+            } else {
+                // 【PaperMCの場合】直接メソッドを呼び出す
+                removeHealthModifier(player);
+            }
         }
         getLogger().info("HealthBoostPlugin disabled and all custom health modifiers removed.");
     }
